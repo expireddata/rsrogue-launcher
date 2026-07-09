@@ -144,6 +144,7 @@ public class Launcher
 		parser.accepts("bootstrap_sig_url", "Bootstrap signature URL").withRequiredArg();
 		parser.accepts("world_client_port", "World Client Port").withRequiredArg();
 		parser.accepts("developer-mode");
+		parser.accepts("profile").withRequiredArg();
 		parser.accepts("client_name",
 				"The name of the client to assign & use for .runelite-name directory.").withRequiredArg();
 		parser.accepts("varp_count").withRequiredArg();
@@ -435,6 +436,9 @@ public class Launcher
 			clientArgs.add("--jav_config=" + options.valueOf("jav_config"));
 			if (options.has("developer-mode")) {
 				clientArgs.add("--developer-mode");
+			}
+			if (options.has("profile")) {
+				clientArgs.add("--profile=" + options.valueOf("profile"));
 			}
 			SplashScreen.stage(.90, "Starting the client", "");
 
