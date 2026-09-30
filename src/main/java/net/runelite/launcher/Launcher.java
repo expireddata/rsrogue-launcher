@@ -243,6 +243,10 @@ public class Launcher
 					// takes out of the client arguments, so add them back
 					var clientArgs = getClientArgs(settings);
 					addClientOptions(clientArgs, options);
+					if (standalone)
+					{
+						Standalone.hangIfTesting();
+					}
 					log.info("Client process: starting RuneLite");
 					ReflectionLauncher.launch(classpath, clientArgs);
 				}
@@ -510,12 +514,20 @@ public class Launcher
 			{
 				SplashScreen.stop();
 				int exitCode = client.waitFor();
+				if (exitCode == Standalone.CLIENT_HUNG_EXIT && settings.launchMode != LaunchMode.JVM && ForkLauncher.canForkLaunch())
+				{
+					// The hang has been intermittent, so a second try usually starts
+					log.warn("The client hung while starting; trying once more");
+					client = ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+					log.info("Started client process {}", client.pid());
+					exitCode = client.waitFor();
+				}
 				if (exitCode == 0)
 				{
 					System.exit(0);
 				}
 				log.error("The client exited with code {}", exitCode);
-				String reason = exitCode == Standalone.CLIENT_HUNG_EXIT ? "did not open a window" : "closed unexpectedly (code " + exitCode + ")";
+				String reason = exitCode == Standalone.CLIENT_HUNG_EXIT ? "did not start (twice)" : "closed unexpectedly (code " + exitCode + ")";
 				SwingUtilities.invokeLater(() ->
 					new FatalErrorDialog("rsrogue " + reason + ". Close any other rsrogue windows and try again. " +
 						"The details are in " + new File(LOGS_DIR, "launcher.log") + ".")
