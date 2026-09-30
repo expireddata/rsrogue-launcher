@@ -120,6 +120,13 @@ public class Launcher
 		final boolean standalone = Standalone.isStandalone(args);
 		if (standalone)
 		{
+			// A forked client process (--classpath) is watched from its very start, so a hang at any
+			// step shows up in the log with every thread's stack
+			if (Arrays.asList(args).contains("--classpath"))
+			{
+				Standalone.watchClientStartup();
+				log.info("Client process {} starting", ProcessHandle.current().pid());
+			}
 			args = Standalone.withDefaults(args);
 		}
 
@@ -220,7 +227,9 @@ public class Launcher
 		{
 			if (options.has("classpath"))
 			{
+				log.info("Client process: native setup done");
 				TrustManagerUtil.setupTrustManager();
+				log.info("Client process: trust manager set up");
 
 				// being called from ForkLauncher. All JVM options are already set.
 				var classpathOpt = String.valueOf(options.valueOf("classpath"));
@@ -236,8 +245,9 @@ public class Launcher
 					addClientOptions(clientArgs, options);
 					if (standalone)
 					{
-						Standalone.watchClientStartup();
+						Standalone.hangIfTesting();
 					}
+					log.info("Client process: starting RuneLite");
 					ReflectionLauncher.launch(classpath, clientArgs);
 				}
 				catch (Exception e)
@@ -484,6 +494,7 @@ public class Launcher
 			{
 				log.debug("Using launch mode: FORK");
 				client = ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+				log.info("Started client process {}", client.pid());
 			}
 			else
 			{
@@ -503,12 +514,20 @@ public class Launcher
 			{
 				SplashScreen.stop();
 				int exitCode = client.waitFor();
+				if (exitCode == Standalone.CLIENT_HUNG_EXIT && settings.launchMode != LaunchMode.JVM && ForkLauncher.canForkLaunch())
+				{
+					// The hang has been intermittent, so a second try usually starts
+					log.warn("The client hung while starting; trying once more");
+					client = ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+					log.info("Started client process {}", client.pid());
+					exitCode = client.waitFor();
+				}
 				if (exitCode == 0)
 				{
 					System.exit(0);
 				}
 				log.error("The client exited with code {}", exitCode);
-				String reason = exitCode == Standalone.CLIENT_HUNG_EXIT ? "did not open a window" : "closed unexpectedly (code " + exitCode + ")";
+				String reason = exitCode == Standalone.CLIENT_HUNG_EXIT ? "did not start (twice)" : "closed unexpectedly (code " + exitCode + ")";
 				SwingUtilities.invokeLater(() ->
 					new FatalErrorDialog("rsrogue " + reason + ". Close any other rsrogue windows and try again. " +
 						"The details are in " + new File(LOGS_DIR, "launcher.log") + ".")

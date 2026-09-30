@@ -62,6 +62,8 @@ class ReflectionLauncher
 				Class<?> mainClass = loader.loadClass(LauncherProperties.getMain());
 
 				Method main = mainClass.getMethod("main", String[].class);
+				log.info("Calling RuneLite main");
+				Standalone.onRuneLiteMain();
 				main.invoke(null, (Object) clientArgs.toArray(new String[0]));
 			}
 			catch (Exception ex)
