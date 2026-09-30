@@ -4,3 +4,5 @@ build
 RuneLiteSetup*.exe
 build/
 target/
+dist/
+rsrogueSetup*.exe
