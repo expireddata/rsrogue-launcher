@@ -69,7 +69,7 @@ class ForkLauncher
 		return false;
 	}
 
-	static void launch(
+	static Process launch(
 		Bootstrap bootstrap,
 		List<File> classpath,
 		Collection<String> clientArgs,
@@ -157,6 +157,6 @@ class ForkLauncher
 		log.debug("Running process: {}", commands);
 
 		var builder = new ProcessBuilder(commands.toArray(new String[0]));
-		builder.start();
+		return builder.start();
 	}
 }

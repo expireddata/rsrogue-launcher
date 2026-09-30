@@ -93,6 +93,8 @@ import net.runelite.launcher.beans.Artifact;
 import net.runelite.launcher.beans.Bootstrap;
 import net.runelite.launcher.beans.Diff;
 import net.runelite.launcher.beans.Platform;
+import net.rsprox.patch.runelite.PatchSettings;
+import net.rsrogue.launcher.Standalone;
 import org.newsclub.net.unix.AFOutputStream;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
@@ -101,9 +103,10 @@ import org.slf4j.LoggerFactory;
 @Slf4j
 public class Launcher
 {
-	static final File RUNELITE_DIR = new File(System.getProperty("user.home"), ".runelite");
+	// rsrogue: kept apart from ~/.runelite, so the pinned, patched jars never touch a normal RuneLite install
+	static final File RUNELITE_DIR = Standalone.HOME;
 	static final File LOGS_DIR = new File(RUNELITE_DIR, "logs");
-	static final File REPO_DIR = new File(RUNELITE_DIR, "repository2");
+	static final File REPO_DIR = new File(RUNELITE_DIR, "repository");
 	public static final File CRASH_FILES = new File(LOGS_DIR, "jvm_crash_pid_%p.log");
 	private static final String USER_AGENT = "RuneLite/" + LauncherProperties.getVersion();
 	static final String LAUNCHER_EXECUTABLE_NAME_WIN = "RuneLite.exe";
@@ -114,6 +117,12 @@ public class Launcher
 
 	public static void main(String[] args)
 	{
+		final boolean standalone = Standalone.isStandalone(args);
+		if (standalone)
+		{
+			args = Standalone.withDefaults(args);
+		}
+
 		OptionParser parser = new OptionParser(false);
 		parser.allowsUnrecognizedOptions();
 		parser.accepts("postinstall", "Perform post-install tasks");
@@ -148,6 +157,7 @@ public class Launcher
 		parser.accepts("client_name",
 				"The name of the client to assign & use for .runelite-name directory.").withRequiredArg();
 		parser.accepts("varp_count").withRequiredArg();
+		parser.accepts("server_host", "rsrogue game server address").withRequiredArg();
 
 		if (OS.getOs() == OS.OSType.MacOS)
 		{
@@ -430,6 +440,15 @@ public class Launcher
 				return;
 			}
 
+			if (standalone)
+			{
+				PatchSettings.setConfigurationPath(Standalone.HOME.toPath());
+				PatchSettings.setRuneliteDirectory("." + Standalone.CLIENT_NAME);
+				Standalone.startHttpServer(
+					String.valueOf(options.valueOf("server_host")),
+					Integer.parseInt(String.valueOf(options.valueOf("port"))));
+			}
+
 			patchArtifacts(artifacts, options);
 
 			final Collection<String> clientArgs = getClientArgs(settings);
@@ -453,6 +472,7 @@ public class Launcher
 			// Add VM args from cli/env
 			jvmParams.addAll(getJvmArgs(settings));
 
+			Process client = null;
 			if (settings.launchMode == LaunchMode.REFLECT)
 			{
 				log.debug("Using launch mode: REFLECT");
@@ -461,7 +481,7 @@ public class Launcher
 			else if (settings.launchMode == LaunchMode.FORK || (settings.launchMode == LaunchMode.AUTO && ForkLauncher.canForkLaunch()))
 			{
 				log.debug("Using launch mode: FORK");
-				ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+				client = ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
 			}
 			else
 			{
@@ -473,7 +493,15 @@ public class Launcher
 
 				// launch mode JVM or AUTO outside of packr
 				log.debug("Using launch mode: JVM");
-				JvmLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+				client = JvmLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+			}
+
+			// The client reads its world lists from our http server for as long as it runs
+			if (standalone && client != null)
+			{
+				SplashScreen.stop();
+				client.waitFor();
+				System.exit(0);
 			}
 		}
 		catch (Exception e)
@@ -555,6 +583,11 @@ public class Launcher
 				}
 				Path output = success.getOutputPath();
 				injectedClient.setName(output.toFile().getName());
+				// Only RSProx needs the client's original modulus, to talk to the real server
+				if (!options.has("socket_id"))
+				{
+					return true;
+				}
 				String oldModulus = success.getOldModulus();
 				long socketId = Long.parseLong(String.valueOf(options.valueOf("socket_id")));
 				File socketFile = Path.of(System.getProperty("user.home"))
@@ -663,18 +696,11 @@ public class Launcher
 			.GET()
 			.build();
 
-		HttpRequest bootstrapSigReq = HttpRequest.newBuilder()
-			.uri(URI.create(bootstrapSig))
-			.header("User-Agent", USER_AGENT)
-			.GET()
-			.build();
-
-		HttpResponse<byte[]> bootstrapResp, bootstrapSigResp;
+		HttpResponse<byte[]> bootstrapResp;
 
 		try
 		{
 			bootstrapResp = httpClient.send(bootstrapReq, HttpResponse.BodyHandlers.ofByteArray());
-			bootstrapSigResp = httpClient.send(bootstrapSigReq, HttpResponse.BodyHandlers.ofByteArray());
 		}
 		catch (InterruptedException ex)
 		{
@@ -686,16 +712,40 @@ public class Launcher
 			throw new IOException("Unable to download bootstrap (status code " + bootstrapResp.statusCode() + "): " + new String(bootstrapResp.body()));
 		}
 
-		if (bootstrapSigResp.statusCode() != 200)
-		{
-			throw new IOException("Unable to download bootstrap signature (status code " + bootstrapSigResp.statusCode() + "): " + new String(bootstrapSigResp.body()));
-		}
-
 		final byte[] bytes = bootstrapResp.body();
-		final byte[] signature = bootstrapSigResp.body();
+
+		// rsrogue: the pinned bootstrap has no signature, so it is pinned by its hash instead
+		if (bootstrap.equals(Standalone.BOOTSTRAP_URL))
+		{
+			String hash = Hashing.sha256().hashBytes(bytes).toString();
+			if (!hash.equals(Standalone.BOOTSTRAP_SHA256))
+			{
+				throw new VerificationException("Unexpected bootstrap hash " + hash);
+			}
+		}
 
 		// Only verify the bootstrap for official bootstraps, as other clients may use different certificates
 		if (bootstrap.contains("static.runelite.net")) {
+			HttpRequest bootstrapSigReq = HttpRequest.newBuilder()
+				.uri(URI.create(bootstrapSig))
+				.header("User-Agent", USER_AGENT)
+				.GET()
+				.build();
+			HttpResponse<byte[]> bootstrapSigResp;
+			try
+			{
+				bootstrapSigResp = httpClient.send(bootstrapSigReq, HttpResponse.BodyHandlers.ofByteArray());
+			}
+			catch (InterruptedException ex)
+			{
+				throw new IOException(ex);
+			}
+			if (bootstrapSigResp.statusCode() != 200)
+			{
+				throw new IOException("Unable to download bootstrap signature (status code " + bootstrapSigResp.statusCode() + "): " + new String(bootstrapSigResp.body()));
+			}
+			final byte[] signature = bootstrapSigResp.body();
+
 			Certificate certificate = getCertificate();
 			Signature s = Signature.getInstance("SHA256withRSA");
 			s.initVerify(certificate);

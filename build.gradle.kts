@@ -178,6 +178,8 @@ tasks.shadowJar {
     from(sourceSets.getByName("java8").output)
     minimize {
         exclude(dependency("ch.qos.logback:.*:.*"))
+        // log4j-slf4j-impl is the SLF4J provider, found through a service file, which minimize cannot see
+        exclude(dependency("org.apache.logging.log4j:.*:.*"))
     }
     archiveFileName.set(project.findProperty("finalName") as String + ".jar")
     manifest {

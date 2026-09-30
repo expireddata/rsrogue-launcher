@@ -69,7 +69,7 @@ class JvmLauncher
 		return javaPath.toAbsolutePath().toString();
 	}
 
-	static void launch(
+	static Process launch(
 		Bootstrap bootstrap,
 		List<File> classpath,
 		Collection<String> clientArgs,
@@ -95,7 +95,7 @@ class JvmLauncher
 		catch (FileNotFoundException ex)
 		{
 			logger.error("Unable to find java executable", ex);
-			return;
+			return null;
 		}
 
 		List<String> arguments = new ArrayList<>();
@@ -136,6 +136,7 @@ class JvmLauncher
 				throw new RuntimeException(e);
 			}
 		}
+		return process;
 	}
 
 	static String[] getJvmArguments(Bootstrap bootstrap)

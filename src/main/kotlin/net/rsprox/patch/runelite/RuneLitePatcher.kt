@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import kotlin.io.path.Path
 import kotlin.io.path.copyTo
+import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
@@ -69,8 +70,9 @@ public class RuneLitePatcher {
     ): Path {
         val time = System.currentTimeMillis()
         val inputPath = path.parent.resolve(path.nameWithoutExtension + "-$time-patched." + path.extension)
-        val configurationPath = Path(System.getProperty("user.home"), ".rsprox")
+        val configurationPath = PatchSettings.configurationPath
         val runelitePath = configurationPath.resolve("runelite")
+        runelitePath.createDirectories()
         val existingClient = runelitePath.resolve("latest-runelite-$worldClientPort.jar")
         existingClient.deleteIfExists()
         val copy = path.copyTo(inputPath)
@@ -187,13 +189,13 @@ public class RuneLitePatcher {
     }
 
     private fun sign(path: Path) {
-        val fakeCertificate =
-            Path(System.getProperty("user.home"))
-                .resolve(".rsprox")
-                .resolve("signkey")
-                .resolve("fake-cert.jks")
+        // The same throwaway key RSProx ships (its fake-cert.jks resource)
         val password = "123456".toCharArray()
-        val store = KeyStore.getInstance(fakeCertificate.toFile(), password)
+        val store = KeyStore.getInstance("JKS")
+        RuneLitePatcher::class.java.getResourceAsStream("fake-cert.jks").use { input ->
+            checkNotNull(input) { "fake-cert.jks resource not available." }
+            store.load(input, password)
+        }
         val entry = store.getEntry("test", KeyStore.PasswordProtection(password)) as KeyStore.PrivateKeyEntry
         val signer = JarSigner.Builder(entry).build()
         val output = path.parent.resolve(path.nameWithoutExtension + "-signed.${path.extension}")
@@ -311,12 +313,13 @@ public class RuneLitePatcher {
             val sourceDirectory = ".runelite"
             val source = sourceDirectory.toByteArray(Charsets.UTF_8)
             val index = replacementResourceFile.indexOf(source)
-            val prefix = replacementResourceFile.sliceArray(0..<index)
-            val suffix = replacementResourceFile.sliceArray((index + source.size)..<replacementResourceFile.size)
-            val replacementDirectory = ".rlcustom"
-            val replacement = replacementDirectory.toByteArray(Charsets.UTF_8)
-            val combined = prefix + replacement + suffix
-            replacementResourceFile = combined
+            // setString rewrites the constant's length, so the new name may be any length
+            val oldLength =
+                (replacementResourceFile[index - 2].toInt() and 0xFF shl 8) or
+                    (replacementResourceFile[index - 1].toInt() and 0xFF)
+            check(oldLength == source.size) { "$sourceDirectory is not a whole constant" }
+            val replacementDirectory = PatchSettings.runeliteDirectory
+            replacementResourceFile = replacementResourceFile.setString(index, replacementDirectory)
             logger.info("Replacing $sourceDirectory directory with $replacementDirectory")
         }
 
