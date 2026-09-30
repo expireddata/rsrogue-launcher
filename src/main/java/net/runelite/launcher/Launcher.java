@@ -120,6 +120,13 @@ public class Launcher
 		final boolean standalone = Standalone.isStandalone(args);
 		if (standalone)
 		{
+			// A forked client process (--classpath) is watched from its very start, so a hang at any
+			// step shows up in the log with every thread's stack
+			if (Arrays.asList(args).contains("--classpath"))
+			{
+				Standalone.watchClientStartup();
+				log.info("Client process {} starting", ProcessHandle.current().pid());
+			}
 			args = Standalone.withDefaults(args);
 		}
 
@@ -220,7 +227,9 @@ public class Launcher
 		{
 			if (options.has("classpath"))
 			{
+				log.info("Client process: native setup done");
 				TrustManagerUtil.setupTrustManager();
+				log.info("Client process: trust manager set up");
 
 				// being called from ForkLauncher. All JVM options are already set.
 				var classpathOpt = String.valueOf(options.valueOf("classpath"));
@@ -234,10 +243,7 @@ public class Launcher
 					// takes out of the client arguments, so add them back
 					var clientArgs = getClientArgs(settings);
 					addClientOptions(clientArgs, options);
-					if (standalone)
-					{
-						Standalone.watchClientStartup();
-					}
+					log.info("Client process: starting RuneLite");
 					ReflectionLauncher.launch(classpath, clientArgs);
 				}
 				catch (Exception e)
@@ -484,6 +490,7 @@ public class Launcher
 			{
 				log.debug("Using launch mode: FORK");
 				client = ForkLauncher.launch(bootstrap, classpath, clientArgs, jvmProps, jvmParams);
+				log.info("Started client process {}", client.pid());
 			}
 			else
 			{
