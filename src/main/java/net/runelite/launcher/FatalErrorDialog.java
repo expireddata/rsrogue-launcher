@@ -115,7 +115,7 @@ public class FatalErrorDialog extends JDialog
 			}
 		});
 
-		setTitle("Fatal error starting RuneLite");
+		setTitle("Fatal error starting rsrogue");
 		setLayout(new BorderLayout());
 
 		Container pane = getContentPane();
@@ -125,7 +125,7 @@ public class FatalErrorDialog extends JDialog
 		leftPane.setBackground(DARKER_GRAY_COLOR);
 		leftPane.setLayout(new BorderLayout());
 
-		JLabel title = new JLabel("There was a fatal error starting RuneLite");
+		JLabel title = new JLabel("There was a fatal error starting rsrogue");
 		title.setForeground(Color.WHITE);
 		title.setFont(font.deriveFont(16.f));
 		title.setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -152,8 +152,6 @@ public class FatalErrorDialog extends JDialog
 		{
 			LinkBrowser.open(Launcher.LOGS_DIR.toString());
 		});
-		addButton("Get help on Discord", () -> LinkBrowser.browse(LauncherProperties.getDiscordInvite()));
-		addButton("Troubleshooting steps", () -> LinkBrowser.browse(LauncherProperties.getTroubleshootingLink()));
 
 		pane.add(rightColumn, BorderLayout.EAST);
 	}
