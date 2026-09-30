@@ -137,6 +137,9 @@ public class RuneLitePatcher {
                 e,
             )
             throw e
+        } catch (e: NoClassDefFoundError) {
+            // A JRE has no jdk.jartool module, so nothing to sign with
+            logger.warn("Unable to sign {}: {}", patchedJar, e.toString())
         }
         jarFile.copyTo(existingClient.toFile())
         return copy
