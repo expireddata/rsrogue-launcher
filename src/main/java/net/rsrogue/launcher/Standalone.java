@@ -26,8 +26,6 @@ package net.rsrogue.launcher;
 
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpServer;
-import java.awt.Component;
-import java.awt.Frame;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -116,31 +114,52 @@ public final class Standalone
 	public static final int CLIENT_FAILED_EXIT = 2;
 	public static final int CLIENT_HUNG_EXIT = 3;
 
-	/** How long the client has to open a window before it counts as hung. */
-	private static final long CLIENT_WINDOW_TIMEOUT_MS = 60_000;
+	/** How long the client process has to reach RuneLite's main (normally under a second). */
+	private static final long CLIENT_START_TIMEOUT_MS = 20_000;
+
+	private static volatile boolean runeliteMainCalled;
 
 	/**
-	 * Standalone clients have been seen to hang before opening any window, leaving a process
-	 * running and nothing on screen. Once the client has had time to start, this checks for a
-	 * window; if none opens in time, it logs every thread (to show where it is stuck) and exits
-	 * with {@link #CLIENT_HUNG_EXIT}, so the launcher can say so.
+	 * For testing the watchdog and retry: with {@code RSROGUE_TEST_HANG} set to a file path that
+	 * does not exist yet, the client process creates it and hangs, so only the first one hangs.
+	 */
+	public static void hangIfTesting() throws IOException, InterruptedException
+	{
+		String marker = System.getenv("RSROGUE_TEST_HANG");
+		if (marker == null || !new File(marker).createNewFile())
+		{
+			return;
+		}
+		log.warn("RSROGUE_TEST_HANG: hanging this client process");
+		Thread.sleep(Long.MAX_VALUE);
+	}
+
+	/** Called just before RuneLite's main runs, which then opens its splash window at once. */
+	public static void onRuneLiteMain()
+	{
+		runeliteMainCalled = true;
+	}
+
+	/**
+	 * Standalone clients have been seen to hang before RuneLite's main (in Swing's setup), leaving
+	 * a process running and nothing on screen. If main is not reached in time, this logs every
+	 * thread (to show where it is stuck) and exits with {@link #CLIENT_HUNG_EXIT}, so the launcher
+	 * can say so. It must not touch AWT or Swing: a hang there would block it too.
 	 */
 	public static void watchClientStartup()
 	{
 		Thread watchdog = new Thread(() ->
 		{
-			long deadline = System.currentTimeMillis() + CLIENT_WINDOW_TIMEOUT_MS;
+			long deadline = System.currentTimeMillis() + CLIENT_START_TIMEOUT_MS;
 			try
 			{
-				// Wait before touching AWT, so the client sets it up first
-				Thread.sleep(15_000);
 				while (System.currentTimeMillis() < deadline)
 				{
-					if (Arrays.stream(Frame.getFrames()).anyMatch(Component::isDisplayable))
+					if (runeliteMainCalled)
 					{
 						return;
 					}
-					Thread.sleep(1_000);
+					Thread.sleep(500);
 				}
 			}
 			catch (InterruptedException e)
@@ -158,7 +177,7 @@ public final class Standalone
 					dump.append("\n\tat ").append(element);
 				}
 			}
-			log.error("The client opened no window within {} seconds. Threads:{}", CLIENT_WINDOW_TIMEOUT_MS / 1000, dump);
+			log.error("The client did not start within {} seconds. Threads:{}", CLIENT_START_TIMEOUT_MS / 1000, dump);
 			System.exit(CLIENT_HUNG_EXIT);
 		}, "rsrogue-startup-watchdog");
 		watchdog.setDaemon(true);
