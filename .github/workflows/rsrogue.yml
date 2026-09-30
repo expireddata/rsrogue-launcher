@@ -14,7 +14,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: 'true'
-    - run: choco install innosetup --version 6.4.0
+    # Inno Setup (iscc) comes with the windows-2022 runner image
     - name: Set up JDK 11
       uses: actions/setup-java@v4
       with:
