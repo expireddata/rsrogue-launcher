@@ -112,6 +112,30 @@ tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.WARN
 }
 
+// rsrogue: the game server address is given when building (-PrsrogueServerHost=..., or the
+// RSROGUE_SERVER_HOST environment variable), so it never goes in the repository. Unset, the
+// launcher connects to 127.0.0.1.
+val rsrogueServerHost =
+    providers.gradleProperty("rsrogueServerHost")
+        .orElse(providers.environmentVariable("RSROGUE_SERVER_HOST"))
+        .orElse("")
+
+val generateRsrogueServerProperties by tasks.registering {
+    val host = rsrogueServerHost
+    val output = layout.buildDirectory.dir("generated/rsrogue-resources")
+    inputs.property("serverHost", host)
+    outputs.dir(output)
+    doLast {
+        val file = output.get().file("net/rsrogue/launcher/server.properties").asFile
+        file.parentFile.mkdirs()
+        file.writeText("server_host=${host.get().trim()}\n")
+    }
+}
+
+sourceSets.main {
+    resources.srcDir(generateRsrogueServerProperties)
+}
+
 tasks.getByName<JavaCompile>("compileJava8Java") {
     options.release.unset()
     sourceCompatibility = "1.8"

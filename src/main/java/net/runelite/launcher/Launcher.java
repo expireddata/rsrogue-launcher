@@ -109,7 +109,7 @@ public class Launcher
 	static final File REPO_DIR = new File(RUNELITE_DIR, "repository");
 	public static final File CRASH_FILES = new File(LOGS_DIR, "jvm_crash_pid_%p.log");
 	private static final String USER_AGENT = "RuneLite/" + LauncherProperties.getVersion();
-	static final String LAUNCHER_EXECUTABLE_NAME_WIN = "RuneLite.exe";
+	static final String LAUNCHER_EXECUTABLE_NAME_WIN = "rsrogue.exe";
 	static final String LAUNCHER_EXECUTABLE_NAME_OSX = "RuneLite";
 	static boolean nativesLoaded;
 
@@ -230,7 +230,11 @@ public class Launcher
 					.collect(Collectors.toList());
 				try
 				{
-					ReflectionLauncher.launch(classpath, getClientArgs(settings));
+					// The forking launcher passes the client's options on as options, which the parser
+					// takes out of the client arguments, so add them back
+					var clientArgs = getClientArgs(settings);
+					addClientOptions(clientArgs, options);
+					ReflectionLauncher.launch(classpath, clientArgs);
 				}
 				catch (Exception e)
 				{
@@ -452,13 +456,7 @@ public class Launcher
 			patchArtifacts(artifacts, options);
 
 			final Collection<String> clientArgs = getClientArgs(settings);
-			clientArgs.add("--jav_config=" + options.valueOf("jav_config"));
-			if (options.has("developer-mode")) {
-				clientArgs.add("--developer-mode");
-			}
-			if (options.has("profile")) {
-				clientArgs.add("--profile=" + options.valueOf("profile"));
-			}
+			addClientOptions(clientArgs, options);
 			SplashScreen.stage(.90, "Starting the client", "");
 
 			var classpath = artifacts.stream()
@@ -801,6 +799,17 @@ public class Launcher
 		}
 
 		return false;
+	}
+
+	private static void addClientOptions(Collection<String> clientArgs, OptionSet options)
+	{
+		clientArgs.add("--jav_config=" + options.valueOf("jav_config"));
+		if (options.has("developer-mode")) {
+			clientArgs.add("--developer-mode");
+		}
+		if (options.has("profile")) {
+			clientArgs.add("--profile=" + options.valueOf("profile"));
+		}
 	}
 
 	private static Collection<String> getClientArgs(LauncherSettings settings)

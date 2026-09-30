@@ -32,6 +32,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.BindException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -40,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -52,8 +54,12 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class Standalone
 {
-	/** The game server players connect to. Overridden with {@code --server_host}. */
-	public static final String DEFAULT_SERVER_HOST = "127.0.0.1";
+	/**
+	 * The game server players connect to, set when the launcher is built (the
+	 * {@code rsrogueServerHost} Gradle property, written to {@code server.properties}) so the address
+	 * stays out of the repository. Overridden with {@code --server_host}.
+	 */
+	public static final String DEFAULT_SERVER_HOST = buildProperty("server_host", "127.0.0.1");
 	public static final int DEFAULT_GAME_PORT = 43594;
 
 	/** The public half of the server's RSA key pair ({@code .data/client.key}). */
@@ -84,6 +90,24 @@ public final class Standalone
 
 	private Standalone()
 	{
+	}
+
+	private static String buildProperty(String name, String fallback)
+	{
+		Properties properties = new Properties();
+		try (InputStream in = Standalone.class.getResourceAsStream("server.properties"))
+		{
+			if (in != null)
+			{
+				properties.load(in);
+			}
+		}
+		catch (IOException e)
+		{
+			throw new UncheckedIOException(e);
+		}
+		String value = properties.getProperty(name, "").trim();
+		return value.isEmpty() ? fallback : value;
 	}
 
 	/** Standalone unless RSProx started us, which always passes its socket id. */
