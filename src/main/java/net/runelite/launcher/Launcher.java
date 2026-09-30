@@ -234,6 +234,10 @@ public class Launcher
 					// takes out of the client arguments, so add them back
 					var clientArgs = getClientArgs(settings);
 					addClientOptions(clientArgs, options);
+					if (standalone)
+					{
+						Standalone.watchClientStartup();
+					}
 					ReflectionLauncher.launch(classpath, clientArgs);
 				}
 				catch (Exception e)
@@ -498,8 +502,18 @@ public class Launcher
 			if (standalone && client != null)
 			{
 				SplashScreen.stop();
-				client.waitFor();
-				System.exit(0);
+				int exitCode = client.waitFor();
+				if (exitCode == 0)
+				{
+					System.exit(0);
+				}
+				log.error("The client exited with code {}", exitCode);
+				String reason = exitCode == Standalone.CLIENT_HUNG_EXIT ? "did not open a window" : "closed unexpectedly (code " + exitCode + ")";
+				SwingUtilities.invokeLater(() ->
+					new FatalErrorDialog("rsrogue " + reason + ". Close any other rsrogue windows and try again. " +
+						"The details are in " + new File(LOGS_DIR, "launcher.log") + ".")
+						.open());
+				return;
 			}
 		}
 		catch (Exception e)

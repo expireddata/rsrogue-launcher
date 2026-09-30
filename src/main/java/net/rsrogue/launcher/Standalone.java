@@ -26,6 +26,8 @@ package net.rsrogue.launcher;
 
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpServer;
+import java.awt.Component;
+import java.awt.Frame;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -108,6 +110,59 @@ public final class Standalone
 		}
 		String value = properties.getProperty(name, "").trim();
 		return value.isEmpty() ? fallback : value;
+	}
+
+	/** Exit codes of a client process that failed to start, so the launcher shows an error. */
+	public static final int CLIENT_FAILED_EXIT = 2;
+	public static final int CLIENT_HUNG_EXIT = 3;
+
+	/** How long the client has to open a window before it counts as hung. */
+	private static final long CLIENT_WINDOW_TIMEOUT_MS = 60_000;
+
+	/**
+	 * Standalone clients have been seen to hang before opening any window, leaving a process
+	 * running and nothing on screen. Once the client has had time to start, this checks for a
+	 * window; if none opens in time, it logs every thread (to show where it is stuck) and exits
+	 * with {@link #CLIENT_HUNG_EXIT}, so the launcher can say so.
+	 */
+	public static void watchClientStartup()
+	{
+		Thread watchdog = new Thread(() ->
+		{
+			long deadline = System.currentTimeMillis() + CLIENT_WINDOW_TIMEOUT_MS;
+			try
+			{
+				// Wait before touching AWT, so the client sets it up first
+				Thread.sleep(15_000);
+				while (System.currentTimeMillis() < deadline)
+				{
+					if (Arrays.stream(Frame.getFrames()).anyMatch(Component::isDisplayable))
+					{
+						return;
+					}
+					Thread.sleep(1_000);
+				}
+			}
+			catch (InterruptedException e)
+			{
+				return;
+			}
+
+			StringBuilder dump = new StringBuilder();
+			for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet())
+			{
+				dump.append('\n').append('"').append(entry.getKey().getName()).append("\" ")
+					.append(entry.getKey().getState());
+				for (StackTraceElement element : entry.getValue())
+				{
+					dump.append("\n\tat ").append(element);
+				}
+			}
+			log.error("The client opened no window within {} seconds. Threads:{}", CLIENT_WINDOW_TIMEOUT_MS / 1000, dump);
+			System.exit(CLIENT_HUNG_EXIT);
+		}, "rsrogue-startup-watchdog");
+		watchdog.setDaemon(true);
+		watchdog.start();
 	}
 
 	/** Standalone unless RSProx started us, which always passes its socket id. */

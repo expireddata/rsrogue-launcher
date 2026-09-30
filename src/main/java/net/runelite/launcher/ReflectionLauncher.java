@@ -32,6 +32,7 @@ import java.net.URLClassLoader;
 import java.util.Collection;
 import java.util.List;
 import javax.swing.UIManager;
+import net.rsrogue.launcher.Standalone;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -66,6 +67,8 @@ class ReflectionLauncher
 			catch (Exception ex)
 			{
 				log.error("Unable to launch client", ex);
+				// rsrogue: exit, rather than leave a process with no window, so the launcher shows an error
+				System.exit(Standalone.CLIENT_FAILED_EXIT);
 			}
 		});
 		thread.setName("RuneLite");
