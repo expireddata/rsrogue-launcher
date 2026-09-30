@@ -156,6 +156,11 @@ class ForkLauncher
 		log.debug("Running process: {}", commands);
 
 		var builder = new ProcessBuilder(commands.toArray(new String[0]));
+		// rsrogue: nothing reads the client's console output. Left as a pipe (the default), it fills
+		// up (about 4 KB on Windows) and every thread that logs blocks, hanging the client at startup.
+		// It is all in the log files already; stderr is kept for JVM errors.
+		builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+		builder.redirectError(ProcessBuilder.Redirect.appendTo(new File(Launcher.LOGS_DIR, "client-stderr.log")));
 		return builder.start();
 	}
 }
